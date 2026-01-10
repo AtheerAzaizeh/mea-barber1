@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Abril+Fatface&display=swap');
+
+/* Barbershop Design System - Dark & Gold Theme */
+
+@layer base {
+  :root {
+    --background: 0 0% 4%;
+    --foreground: 45 10% 95%;
+
+    --card: 0 0% 8%;
+    --card-foreground: 45 10% 95%;
+
+    --popover: 0 0% 6%;
+    --popover-foreground: 45 10% 95%;
+
+    --primary: 38 75% 55%;
+    --primary-foreground: 0 0% 4%;
+
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 45 10% 95%;
+
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 38 75% 55%;
+    --accent-foreground: 0 0% 4%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 45 10% 95%;
+
+    --border: 0 0% 20%;
+    --input: 0 0% 15%;
+    --ring: 38 75% 55%;
+
+    --radius: 0.75rem;
+
+    /* Custom barbershop tokens */
+    --gold: 38 75% 55%;
+    --gold-muted: 38 50% 40%;
+    --gold-glow: 38 80% 60%;
+    --dark-surface: 0 0% 6%;
+    --darker-surface: 0 0% 4%;
+  }
+
+  .dark {
+    --background: 0 0% 4%;
+    --foreground: 45 10% 95%;
+    --card: 0 0% 8%;
+    --card-foreground: 45 10% 95%;
+    --popover: 0 0% 6%;
+    --popover-foreground: 45 10% 95%;
+    --primary: 38 75% 55%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 45 10% 95%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 38 75% 55%;
+    --accent-foreground: 0 0% 4%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 45 10% 95%;
+    --border: 0 0% 20%;
+    --input: 0 0% 15%;
+    --ring: 38 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    direction: rtl;
+  }
+
+  body {
+    @apply bg-background text-foreground font-abril antialiased;
+  }
+}
+
+@layer components {
+  .btn-gold {
+    @apply bg-primary text-primary-foreground font-semibold rounded-xl px-8 py-4 
+           transition-all duration-300 hover:shadow-[0_0_30px_hsl(var(--gold)/0.4)]
+           active:scale-95;
+  }
+
+  .day-card {
+    @apply border-2 border-border rounded-xl px-4 py-3 text-center cursor-pointer
+           transition-all duration-200 hover:border-primary/50;
+  }
+
+  .day-card-selected {
+    @apply bg-primary text-primary-foreground border-primary;
+  }
+
+  .time-slot {
+    @apply border border-border rounded-lg px-4 py-2 text-center cursor-pointer
+           transition-all duration-200 hover:border-primary/50;
+  }
+
+  .time-slot-selected {
+    @apply bg-primary text-primary-foreground border-primary;
+  }
+
+  .time-slot-disabled {
+    @apply opacity-40 cursor-not-allowed hover:border-border;
+  }
+
+  .glass-card {
+    @apply bg-card/90 backdrop-blur-md border border-border rounded-2xl;
+  }
+
+  .input-field {
+    @apply w-full bg-transparent border border-border rounded-lg px-4 py-3 
+           text-foreground placeholder:text-muted-foreground
+           focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary
+           transition-all duration-200;
+  }
+
+  .hero-overlay {
+    @apply absolute inset-0 bg-gradient-to-b from-background/40 via-background/60 to-background;
+  }
+}
+
+@layer utilities {
+  .text-gold {
+    color: hsl(var(--gold));
+  }
+
+  .bg-gold {
+    background-color: hsl(var(--gold));
+  }
+
+  .border-gold {
+    border-color: hsl(var(--gold));
+  }
+}
