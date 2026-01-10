@@ -6,7 +6,8 @@ export const BARBERSHOP_CONFIG = {
   owner: "Mohammad Eyad",
   phone: "0540000000",
   hours: "10:00-17:00",
-  location: "מיקום",
+  location: "Dabburya",
+  address: "אלסעדיה 48, Daburiyya",
   
   // Working hours
   openingTime: 10, // 10:00
