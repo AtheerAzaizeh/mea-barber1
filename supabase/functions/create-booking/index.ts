@@ -158,7 +158,7 @@ const handler = async (req: Request): Promise<Response> => {
           ? `+972${phone.slice(1)}` 
           : phone;
 
-        const message = `✂️ התור שלך אושר!\n📅 תאריך: ${booking_date}\n⏰ שעה: ${booking_time}\n\nBARBERSHOP by Mohammad Eyad`;
+        const message = `✂️ התור שלך אושר!\n📅 תאריך: ${booking_date}\n⏰ שעה: ${booking_time}\n\nאנא שים לב: ביטול תור חייב להיעשות לפחות 3 שעות לפני התור.\nכדי לבטל את התור שלח הודעת SMS עם הספרה 0.\n\nBARBERSHOP by Mohammad Eyad`;
 
         const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
 
