@@ -29,7 +29,6 @@ function formatDateHebrew(dateStr: string): string {
 }
 
 const handler = async (req: Request): Promise<Response> => {
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -40,52 +39,39 @@ const handler = async (req: Request): Promise<Response> => {
     const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
 
     if (!accountSid || !authToken || !twilioPhone) {
-      console.error("Missing Twilio credentials");
       throw new Error("Twilio credentials not configured");
     }
 
     const { phone, type, data }: SendSmsRequest = await req.json();
 
-    // Validate Israeli phone number format
     if (!phone || !/^05\d{8}$/.test(phone)) {
       throw new Error("Invalid phone number format");
     }
 
-    // Format phone for international (Israel +972)
     const formattedPhone = `+972${phone.slice(1)}`;
-
-    // Generate message based on type
     let message = "";
+
     switch (type) {
       case "verification":
         const code = data?.code || Math.floor(100000 + Math.random() * 900000).toString();
         message = `קוד האימות שלך הוא: ${code}\nBARBERSHOP by Mohammad Eyad`;
         
-        // Store verification code in database
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         const supabase = createClient(supabaseUrl, supabaseKey);
         
-        // Delete old codes for this phone
-        await supabase
-          .from("verification_codes")
-          .delete()
-          .eq("phone", phone);
-        
-        // Insert new code with 5-minute expiry
-        const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+        await supabase.from("verification_codes").delete().eq("phone", phone);
         await supabase.from("verification_codes").insert({
           phone,
           code,
-          expires_at: expiresAt,
+          expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
           verified: false,
         });
-        
         break;
         
       case "booking_confirmation":
         const formattedDateConfirm = data?.date ? formatDateHebrew(data.date) : data?.date;
-        message = `התור שלך אושר!\nתאריך: ${formattedDateConfirm}\nשעה: ${data?.time}\nBARBERSHOP by Mohammad Eyad`;
+        message = `התור שלך אושר!\nתאריך: ${formattedDateConfirm}\nשעה: ${data?.time}\n\nלביטול התור שלח 0 (לפחות 3 שעות לפני התור)\n\nBARBERSHOP by Mohammad Eyad`;
         break;
         
       case "booking_cancelled":
@@ -95,7 +81,7 @@ const handler = async (req: Request): Promise<Response> => {
         
       case "booking_updated":
         const formattedDateUpdate = data?.date ? formatDateHebrew(data.date) : data?.date;
-        message = `התור שלך עודכן!\nתאריך: ${formattedDateUpdate}\nשעה: ${data?.time}\nBARBERSHOP by Mohammad Eyad`;
+        message = `התור שלך עודכן!\nתאריך: ${formattedDateUpdate}\nשעה: ${data?.time}\n\nלביטול התור שלח 0 (לפחות 3 שעות לפני התור)\n\nBARBERSHOP by Mohammad Eyad`;
         break;
         
       default:
@@ -104,14 +90,10 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Sending SMS to ${formattedPhone}: ${type}`);
 
-    // Send SMS via Twilio
-    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-    const credentials = btoa(`${accountSid}:${authToken}`);
-
-    const response = await fetch(twilioUrl, {
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
       method: "POST",
       headers: {
-        "Authorization": `Basic ${credentials}`,
+        "Authorization": `Basic ${btoa(`${accountSid}:${authToken}`)}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
@@ -128,27 +110,15 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error(result.message || "Failed to send SMS");
     }
 
-    console.log("SMS sent successfully:", result.sid);
-
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        messageId: result.sid,
-        type 
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      JSON.stringify({ success: true, messageId: result.sid, type }),
+      { headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   } catch (error: any) {
-    console.error("Error in send-sms function:", error);
+    console.error("Error in send-sms:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }
 };
