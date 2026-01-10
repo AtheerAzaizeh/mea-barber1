@@ -88,8 +88,6 @@ const handler = async (req: Request): Promise<Response> => {
         throw new Error("Invalid message type");
     }
 
-    console.log(`Sending SMS to ${formattedPhone}: ${type}`);
-
     const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
       method: "POST",
       headers: {
@@ -106,7 +104,6 @@ const handler = async (req: Request): Promise<Response> => {
     const result = await response.json();
 
     if (!response.ok) {
-      console.error("Twilio error:", result);
       throw new Error(result.message || "Failed to send SMS");
     }
 
@@ -115,7 +112,6 @@ const handler = async (req: Request): Promise<Response> => {
       { headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   } catch (error: any) {
-    console.error("Error in send-sms:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
