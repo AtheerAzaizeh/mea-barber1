@@ -16,7 +16,6 @@ interface CreateBookingRequest {
 }
 
 const handler = async (req: Request): Promise<Response> => {
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -28,28 +27,17 @@ const handler = async (req: Request): Promise<Response> => {
 
     const { phone, code, customer_name, booking_date, booking_time }: CreateBookingRequest = await req.json();
 
-    console.log(`Creating booking for phone: ${phone}, date: ${booking_date}, time: ${booking_time}`);
-
-    // Validate inputs
     if (!phone || !code || !customer_name || !booking_date || !booking_time) {
       throw new Error("Missing required fields");
     }
 
-    // Validate code format
     if (!/^\d{6}$/.test(code)) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "קוד לא תקין" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "קוד לא תקין" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
-    // Find and validate the verification code
     const { data: verificationData, error: fetchError } = await supabase
       .from("verification_codes")
       .select("*")
@@ -59,32 +47,18 @@ const handler = async (req: Request): Promise<Response> => {
       .gt("expires_at", new Date().toISOString())
       .maybeSingle();
 
-    if (fetchError) {
-      console.error("Database error:", fetchError);
-      throw new Error("Database error");
-    }
-
-    if (!verificationData) {
-      console.log("Invalid or expired code");
+    if (fetchError || !verificationData) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "קוד שגוי או פג תוקף" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "קוד שגוי או פג תוקף" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
-    // Mark code as verified
     await supabase
       .from("verification_codes")
       .update({ verified: true })
       .eq("id", verificationData.id);
 
-    // Check if slot is already booked
     const { data: existingBooking } = await supabase
       .from("bookings")
       .select("id")
@@ -95,18 +69,11 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (existingBooking) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "השעה הזו כבר תפוסה" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "השעה הזו כבר תפוסה" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
-    // Check if slot is closed
     const { data: closedSlot } = await supabase
       .from("closed_slots")
       .select("id")
@@ -116,18 +83,11 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (closedSlot) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "השעה הזו לא זמינה" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "השעה הזו לא זמינה" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
-    // Create the booking
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
       .insert([{
@@ -141,11 +101,8 @@ const handler = async (req: Request): Promise<Response> => {
       .single();
 
     if (bookingError) {
-      console.error("Booking error:", bookingError);
       throw new Error("Failed to create booking");
     }
-
-    console.log("Booking created successfully:", booking.id);
 
     // Send confirmation SMS
     try {
@@ -154,15 +111,12 @@ const handler = async (req: Request): Promise<Response> => {
       const twilioPhoneNumber = Deno.env.get("TWILIO_PHONE_NUMBER");
 
       if (twilioAccountSid && twilioAuthToken && twilioPhoneNumber) {
-        const formattedPhone = phone.startsWith("0") 
-          ? `+972${phone.slice(1)}` 
-          : phone;
+        const formattedPhone = phone.startsWith("0") ? `+972${phone.slice(1)}` : phone;
+        
+        // CONSISTENT MESSAGE FORMAT
+        const message = `✂️ התור שלך אושר!\n📅 תאריך: ${booking_date}\n⏰ שעה: ${booking_time}\n\nלביטול התור שלח 0 (לפחות 3 שעות לפני התור)\n\nBARBERSHOP by Mohammad Eyad`;
 
-        const message = `✂️ התור שלך אושר!\n📅 תאריך: ${booking_date}\n⏰ שעה: ${booking_time}\n\nאנא שים לב: ביטול תור חייב להיעשות לפחות 3 שעות לפני התור.\nכדי לבטל את התור שלח הודעת SMS עם הספרה 0.\n\nBARBERSHOP by Mohammad Eyad`;
-
-        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
-
-        await fetch(twilioUrl, {
+        await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
           method: "POST",
           headers: {
             "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
@@ -174,32 +128,19 @@ const handler = async (req: Request): Promise<Response> => {
             Body: message,
           }),
         });
-
-        console.log("Confirmation SMS sent");
       }
     } catch (smsError) {
       console.error("Failed to send confirmation SMS:", smsError);
-      // Don't fail the booking if SMS fails
     }
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        booking 
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      JSON.stringify({ success: true, booking }),
+      { headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   } catch (error: any) {
-    console.error("Error in create-booking function:", error);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   }
 };
