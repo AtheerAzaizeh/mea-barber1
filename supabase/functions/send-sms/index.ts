@@ -34,9 +34,9 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
+    //const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+    //const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+    //const twilioPhone = Deno.env.get("TWILIO_PHONE_NUMBER");
 
     if (!accountSid || !authToken || !twilioPhone) {
       throw new Error("Twilio credentials not configured");
