@@ -1,4 +1,4 @@
-project_id = "qplyvfyfqelmbvwzziec"
+//project_id = "qplyvfyfqelmbvwzziec"
 
 [functions.send-sms]
 verify_jwt = false
