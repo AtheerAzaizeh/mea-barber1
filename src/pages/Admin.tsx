@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { AdminCalendar } from "@/components/admin/AdminCalendar";
 import { AdminLogin } from "@/components/admin/AdminLogin";
 import { useAuth } from "@/hooks/useAuth";
-import heroImage from "@/assets/barbershop-daburiyya-israel-haircut.jpg";
+import heroImage from "@/assets/barbershop-daburiyya-israel-haircut.webp";
 
 const Admin = () => {
   const navigate = useNavigate();

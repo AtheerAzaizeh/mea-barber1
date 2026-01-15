@@ -1,6 +1,6 @@
 import { Phone, Clock, MapPin } from "lucide-react";
 import { BARBERSHOP_CONFIG } from "@/lib/constants";
-import heroImage from "@/assets/barbershop-daburiyya-israel-haircut.jpg";
+import heroImage from "@/assets/barbershop-daburiyya-israel-haircut.webp";
 interface HeroSectionProps {
   onBookClick: () => void;
   compact?: boolean;
