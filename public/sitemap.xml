@@ -1,19 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  
+  <!-- Homepage - Main Landing Page -->
   <url>
     <loc>https://mea-barber.com/</loc>
+    <!-- Multi-language alternatives -->
     <xhtml:link rel="alternate" hreflang="he" href="https://mea-barber.com/"/>
     <xhtml:link rel="alternate" hreflang="ar" href="https://mea-barber.com/"/>
     <xhtml:link rel="alternate" hreflang="en" href="https://mea-barber.com/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://mea-barber.com/"/>
     <lastmod>2026-01-15</lastmod>
-    <changefreq>weekly</changefreq>
+    <changefreq>daily</changefreq>
     <priority>1.0</priority>
+    <!-- Hero Image for Google Image Search -->
+    <image:image>
+      <image:loc>https://mea-barber.com/assets/barbershop-daburiyya-israel-haircut-BTht2L9-.jpg</image:loc>
+      <image:title>מספרה בדבוריה - BARBERSHOP by Mohammad Eyad - תספורות מקצועיות</image:title>
+      <image:caption>המספרה הכי מקצועית בדבוריה וצפון ישראל - صالون حلاقة دبورية - Best Barbershop Daburiyya Nazareth Afula</image:caption>
+      <image:geo_location>Daburiyya, Israel</image:geo_location>
+    </image:image>
+    <!-- PWA Icon -->
+    <image:image>
+      <image:loc>https://mea-barber.com/pwa-512x512.png</image:loc>
+      <image:title>BARBERSHOP Logo - מספרה בדבוריה</image:title>
+      <image:caption>לוגו מספרה BARBERSHOP by Mohammad Eyad - صالون حلاقة دبورية</image:caption>
+    </image:image>
   </url>
+  
+  <!-- Privacy Policy Page -->
   <url>
     <loc>https://mea-barber.com/privacy-policy</loc>
+    <xhtml:link rel="alternate" hreflang="he" href="https://mea-barber.com/privacy-policy"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://mea-barber.com/privacy-policy"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mea-barber.com/privacy-policy"/>
     <lastmod>2026-01-15</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.3</priority>
   </url>
+  
 </urlset>
