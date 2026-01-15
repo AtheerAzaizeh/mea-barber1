@@ -1,6 +1,6 @@
 import { Phone, Clock, MapPin } from "lucide-react";
 import { BARBERSHOP_CONFIG } from "@/lib/constants";
-import heroImage from "@/assets/hero-barbershop.jpg";
+import heroImage from "@/assets/barbershop-daburiyya-israel-haircut.jpg";
 interface HeroSectionProps {
   onBookClick: () => void;
   compact?: boolean;
@@ -14,7 +14,7 @@ export function HeroSection({
       <div className="absolute inset-0">
         <img 
           src={heroImage} 
-          alt="Barbershop" 
+          alt="מספרה בדבוריה - BARBERSHOP by Mohammad Eyad - תספורות מקצועיות לגברים בצפון ישראל" 
           className="w-full h-full object-cover"
           loading="eager"
           fetchPriority="high"

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { z } from "zod";
-import heroImage from "@/assets/hero-barbershop.jpg";
+import heroImage from "@/assets/barbershop-daburiyya-israel-haircut.jpg";
 import { adminLoginSchema } from "@/lib/validations";
 
 interface AdminLoginProps {
@@ -68,7 +68,7 @@ export function AdminLogin({ onLogin }: AdminLoginProps) {
       <div className="absolute inset-0">
         <img
           src={heroImage}
-          alt="Barbershop"
+          alt="מספרה בדבוריה - כניסת מנהל BARBERSHOP"
           className="w-full h-full object-cover"
         />
         <div className="hero-overlay" />

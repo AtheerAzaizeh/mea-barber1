@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { AdminCalendar } from "@/components/admin/AdminCalendar";
 import { AdminLogin } from "@/components/admin/AdminLogin";
 import { useAuth } from "@/hooks/useAuth";
-import heroImage from "@/assets/hero-barbershop.jpg";
+import heroImage from "@/assets/barbershop-daburiyya-israel-haircut.jpg";
 
 const Admin = () => {
   const navigate = useNavigate();
@@ -48,7 +48,7 @@ const Admin = () => {
         <div className="absolute inset-0">
           <img
             src={heroImage}
-            alt="Barbershop"
+            alt="מספרה בדבוריה - ניהול תורים BARBERSHOP"
             className="w-full h-full object-cover"
           />
           <div className="hero-overlay" />
