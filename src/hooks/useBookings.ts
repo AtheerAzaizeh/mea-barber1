@@ -2,6 +2,16 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toDateKey } from "@/lib/constants";
 
+/**
+ * Checks if a booking date+time is in the past
+ */
+function isBookingInPast(bookingDate: string, bookingTime: string): boolean {
+  const [hours, minutes] = bookingTime.split(":").map(Number);
+  const bookingDateTime = new Date(bookingDate + "T00:00:00");
+  bookingDateTime.setHours(hours, minutes, 0, 0);
+  return bookingDateTime < new Date();
+}
+
 export interface Booking {
   id: string;
   customer_name: string;
@@ -158,21 +168,30 @@ export function useBookings() {
     const { error } = await supabase.from("bookings").delete().eq("id", id);
     if (error) throw error;
 
-    // Send cancellation SMS
+    // Only send cancellation SMS if:
+    // 1. sendSms flag is true
+    // 2. Booking exists
+    // 3. Booking is NOT in the past (no point notifying about already-passed bookings)
     if (sendSms && bookingToDelete) {
-      try {
-        await supabase.functions.invoke("send-sms", {
-          body: {
-            phone: bookingToDelete.customer_phone,
-            type: "booking_cancelled",
-            data: {
-              date: bookingToDelete.booking_date,
-              time: bookingToDelete.booking_time,
+      const isPast = isBookingInPast(bookingToDelete.booking_date, bookingToDelete.booking_time);
+      
+      if (!isPast) {
+        try {
+          await supabase.functions.invoke("send-sms", {
+            body: {
+              phone: bookingToDelete.customer_phone,
+              type: "booking_cancelled",
+              data: {
+                date: bookingToDelete.booking_date,
+                time: bookingToDelete.booking_time,
+              },
             },
-          },
-        });
-      } catch (smsError) {
-        console.error("Failed to send cancellation SMS:", smsError);
+          });
+        } catch (smsError) {
+          console.error("Failed to send cancellation SMS:", smsError);
+        }
+      } else {
+        console.log("Skipping SMS for past booking:", bookingToDelete.booking_date, bookingToDelete.booking_time);
       }
     }
   };
@@ -184,6 +203,11 @@ export function useBookings() {
       .map((b) => b.booking_time);
   };
 
+  // Helper to get only future bookings (for admin display)
+  const getFutureBookings = (): Booking[] => {
+    return bookings.filter((b) => !isBookingInPast(b.booking_date, b.booking_time));
+  };
+
   return {
     bookings,
     loading,
@@ -193,6 +217,7 @@ export function useBookings() {
     updateBooking,
     deleteBooking,
     getBookedTimesForDate,
+    getFutureBookings,
     refetch: fetchBookings,
   };
 }

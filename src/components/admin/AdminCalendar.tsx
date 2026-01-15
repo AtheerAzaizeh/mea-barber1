@@ -26,7 +26,7 @@ export function AdminCalendar({ onLogout }: AdminCalendarProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
 
-  const { bookings, loading, createBookingAdmin, updateBooking, deleteBooking } =
+  const { bookings, loading, createBookingAdmin, updateBooking, deleteBooking, getFutureBookings } =
     useBookings();
   const { closedSlots, closeSlot, openSlot, isSlotClosed } = useClosedSlots();
 
@@ -281,10 +281,10 @@ export function AdminCalendar({ onLogout }: AdminCalendarProps) {
         </div>
       </div>
 
-      {/* Bookings List */}
+      {/* Bookings List - Only show FUTURE bookings */}
       <div className="mt-8 space-y-4">
         <h3 className="text-lg font-semibold text-right">תורים קרובים</h3>
-        {bookings
+        {getFutureBookings()
           .filter((b) => b.status !== "cancelled")
           .map((booking) => (
             <div
@@ -318,7 +318,7 @@ export function AdminCalendar({ onLogout }: AdminCalendarProps) {
               </div>
             </div>
           ))}
-        {bookings.filter((b) => b.status !== "cancelled").length === 0 && (
+        {getFutureBookings().filter((b) => b.status !== "cancelled").length === 0 && (
           <p className="text-center text-muted-foreground">אין תורים</p>
         )}
       </div>
