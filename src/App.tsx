@@ -8,7 +8,7 @@ import Admin from "./pages/Admin";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import NotFound from "./pages/NotFound";
 import { IosInstallPrompt } from "./components/IosInstallPrompt";
-
+import { AndroidInstallPrompt } from "./components/AndroidInstallPrompt";
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -18,6 +18,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
           <IosInstallPrompt />
+          <AndroidInstallPrompt />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/admin" element={<Admin />} />
