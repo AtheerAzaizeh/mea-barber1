@@ -14,7 +14,7 @@ export function HeroSection({
       <div className="absolute inset-0">
         <img 
           src={heroImage} 
-          alt="מספרה בדבוריה - BARBERSHOP by Mohammad Eyad - תספורות מקצועיות לגברים בצפון ישראל" 
+          alt="מספרה בדבוריה - המספרה הכי מקצועית בצפון ישראל - تספורות לגברים וילדים - صالون حلاقة دبورية - BARBERSHOP Daburiyya Nazareth Afula" 
           className="w-full h-full object-cover"
           loading="eager"
           fetchPriority="high"
