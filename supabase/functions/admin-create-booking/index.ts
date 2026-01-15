@@ -1,11 +1,23 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/**
+ * admin-create-booking Edge Function
+ * SECURITY FIXES APPLIED:
+ * - Fix #5: Added slot availability checks (same as public endpoint)
+ * - Fix #9: Phone normalization to E.164
+ * - Fix #11: Date validation (future dates only, max 60 days)
+ * - Fix #16: CORS restricted to production domain
+ * - Fix #17: Phone numbers masked in logs
+ */
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import {
+  getCorsHeaders,
+  getSupabaseClient,
+  normalizePhone,
+  toLocalPhone,
+  maskPhone,
+  sanitizeError,
+  isValidBookingDate,
+} from "../_shared/security.ts";
 
 interface AdminCreateBookingRequest {
   customer_name: string;
@@ -15,22 +27,23 @@ interface AdminCreateBookingRequest {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  const origin = req.headers.get("Origin");
+  const headers = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers });
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = getSupabaseClient();
 
-    // Verify admin token
+    // ===== Verify admin authentication =====
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized" }),
-        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 401, headers: { "Content-Type": "application/json", ...headers } }
       );
     }
 
@@ -40,7 +53,7 @@ const handler = async (req: Request): Promise<Response> => {
     if (authError || !user) {
       return new Response(
         JSON.stringify({ success: false, error: "Unauthorized" }),
-        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 401, headers: { "Content-Type": "application/json", ...headers } }
       );
     }
 
@@ -53,17 +66,66 @@ const handler = async (req: Request): Promise<Response> => {
     if (!isAdmin) {
       return new Response(
         JSON.stringify({ success: false, error: "Forbidden - Admin only" }),
-        { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        { status: 403, headers: { "Content-Type": "application/json", ...headers } }
       );
     }
 
     const { customer_name, customer_phone, booking_date, booking_time }: AdminCreateBookingRequest = await req.json();
 
-    console.log(`Admin creating booking: ${booking_date} ${booking_time} for ${customer_name}`);
-
-    // Validate inputs
+    // Validate required inputs
     if (!customer_name || !customer_phone || !booking_date || !booking_time) {
       throw new Error("Missing required fields");
+    }
+
+    // ===== SECURITY: Normalize phone (Fix #9) =====
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizePhone(customer_phone);
+    } catch {
+      throw new Error("Invalid phone number format");
+    }
+
+    const maskedPhone = maskPhone(normalizedPhone);
+    console.log(`Admin creating booking: ${booking_date} ${booking_time} for ${maskedPhone}`);
+
+    // ===== SECURITY: Date validation (Fix #11) =====
+    if (!isValidBookingDate(booking_date)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "תאריך לא תקין" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
+      );
+    }
+
+    // ===== SECURITY: Slot availability checks (Fix #5) =====
+    // Check if slot is already booked
+    const { data: existingBooking } = await supabase
+      .from("bookings")
+      .select("id")
+      .eq("booking_date", booking_date)
+      .eq("booking_time", booking_time)
+      .neq("status", "cancelled")
+      .maybeSingle();
+
+    if (existingBooking) {
+      return new Response(
+        JSON.stringify({ success: false, error: "השעה הזו כבר תפוסה" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
+      );
+    }
+
+    // Check if slot is closed
+    const { data: closedSlot } = await supabase
+      .from("closed_slots")
+      .select("id")
+      .eq("closed_date", booking_date)
+      .or(`closed_time.eq.${booking_time},closed_time.is.null`)
+      .maybeSingle();
+
+    if (closedSlot) {
+      return new Response(
+        JSON.stringify({ success: false, error: "השעה הזו סגורה" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
+      );
     }
 
     // Create the booking
@@ -71,7 +133,7 @@ const handler = async (req: Request): Promise<Response> => {
       .from("bookings")
       .insert([{
         customer_name: customer_name.trim(),
-        customer_phone: customer_phone.trim(),
+        customer_phone: normalizedPhone,
         booking_date,
         booking_time,
         status: "confirmed"
@@ -80,18 +142,22 @@ const handler = async (req: Request): Promise<Response> => {
       .single();
 
     if (bookingError) {
+      // Handle unique constraint violation (race condition)
+      if (bookingError.code === "23505") {
+        return new Response(
+          JSON.stringify({ success: false, error: "השעה הזו כבר תפוסה" }),
+          { status: 200, headers: { "Content-Type": "application/json", ...headers } }
+        );
+      }
       console.error("Booking error:", bookingError);
       throw new Error("Failed to create booking");
     }
 
-    console.log("Admin booking created:", booking.id);
+    console.log(`Admin booking created: ${booking.id}`);
 
-    // Send confirmation SMS (via central send-sms function so copy stays consistent)
+    // Send confirmation SMS
     try {
-      const localPhone = customer_phone.trim().startsWith("+972")
-        ? `0${customer_phone.trim().slice(4)}`
-        : customer_phone.trim();
-
+      const localPhone = toLocalPhone(normalizedPhone);
       await supabase.functions.invoke("send-sms", {
         body: {
           phone: localPhone,
@@ -103,27 +169,20 @@ const handler = async (req: Request): Promise<Response> => {
           },
         },
       });
-
-      console.log("Confirmation SMS sent (send-sms)");
+      console.log(`Confirmation SMS sent for admin booking: ${booking.id}`);
     } catch (smsError) {
       console.error("Failed to send confirmation SMS:", smsError);
     }
 
     return new Response(
       JSON.stringify({ success: true, booking }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      { status: 200, headers: { "Content-Type": "application/json", ...headers } }
     );
   } catch (error: any) {
-    console.error("Error in admin-create-booking function:", error);
+    console.error("Error in admin-create-booking function:", error.message);
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      JSON.stringify({ success: false, error: sanitizeError(error) }),
+      { status: 500, headers: { "Content-Type": "application/json", ...headers } }
     );
   }
 };

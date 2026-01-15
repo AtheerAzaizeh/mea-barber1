@@ -1,11 +1,27 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/**
+ * send-sms Edge Function
+ * SECURITY FIXES APPLIED:
+ * - Fix #3: Test account moved to environment variables, only works in staging
+ * - Fix #4: Rate limiting (3 SMS per phone per hour)
+ * - Fix #9: Phone normalization to E.164
+ * - Fix #16: CORS restricted to production domain
+ * - Fix #17: Phone numbers masked in logs
+ */
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import {
+  getCorsHeaders,
+  getSupabaseClient,
+  normalizePhone,
+  toLocalPhone,
+  isValidIsraeliPhone,
+  isTestAccount,
+  getTestCode,
+  checkRateLimit,
+  recordRateLimit,
+  maskPhone,
+  sanitizeError,
+} from "../_shared/security.ts";
 
 interface SendSmsRequest {
   phone: string;
@@ -18,10 +34,6 @@ interface SendSmsRequest {
   };
 }
 
-// Test account for Google Play Store review
-const TEST_PHONE = "0501234567";
-const TEST_CODE = "123456";
-
 const HEBREW_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
 function formatDateHebrew(dateStr: string): string {
@@ -33,13 +45,120 @@ function formatDateHebrew(dateStr: string): string {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  const origin = req.headers.get("Origin");
+  const headers = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers });
   }
 
   try {
-    // capcom6 SMS Gateway Cloud API credentials
+    const supabase = getSupabaseClient();
+    const { phone, type, data }: SendSmsRequest = await req.json();
+
+    // ===== SECURITY: Normalize and validate phone =====
+    if (!phone) {
+      throw new Error("Phone number is required");
+    }
+
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizePhone(phone);
+    } catch {
+      throw new Error("Invalid phone number format");
+    }
+
+    if (!isValidIsraeliPhone(normalizedPhone)) {
+      throw new Error("Invalid phone number format");
+    }
+
+    const localPhone = toLocalPhone(normalizedPhone);
+    const maskedPhone = maskPhone(normalizedPhone);
+
+    // ===== SECURITY: Rate limiting (Fix #4) =====
+    const isAllowed = await checkRateLimit(supabase, normalizedPhone, "sms_send");
+    if (!isAllowed) {
+      console.log(`Rate limited SMS for: ${maskedPhone}`);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: "יותר מדי ניסיונות, נסה שוב בעוד שעה" 
+        }),
+        { status: 429, headers: { "Content-Type": "application/json", ...headers } }
+      );
+    }
+
+    // Record SMS attempt for rate limiting
+    await recordRateLimit(supabase, normalizedPhone, "sms_send");
+
+    // ===== SECURITY: Test account check (Fix #3) =====
+    const isTest = isTestAccount(normalizedPhone);
+    
+    // Generate message based on type
+    let message = "";
+    switch (type) {
+      case "verification": {
+        // Use test code only in staging environment
+        const testCode = getTestCode();
+        const code = isTest && testCode 
+          ? testCode 
+          : (data?.code || Math.floor(100000 + Math.random() * 900000).toString());
+        
+        message = `קוד האימות שלך הוא: ${code}\nBARBERSHOP by Mohammad Eyad`;
+        
+        // Delete old codes for this phone
+        await supabase
+          .from("verification_codes")
+          .delete()
+          .eq("phone", normalizedPhone);
+        
+        // Insert new code with appropriate expiry
+        // Test accounts get 30 days (for app store review), regular users get 5 minutes
+        const expiryMs = isTest ? 30 * 24 * 60 * 60 * 1000 : 5 * 60 * 1000;
+        const expiresAt = new Date(Date.now() + expiryMs).toISOString();
+        
+        await supabase.from("verification_codes").insert({
+          phone: normalizedPhone,
+          code,
+          expires_at: expiresAt,
+          verified: false,
+        });
+        
+        // Skip actual SMS for test accounts
+        if (isTest) {
+          console.log(`Test account SMS skipped: ${maskedPhone}`);
+          return new Response(
+            JSON.stringify({ success: true, type, testAccount: true }),
+            { status: 200, headers: { "Content-Type": "application/json", ...headers } }
+          );
+        }
+        break;
+      }
+        
+      case "booking_confirmation": {
+        const formattedDate = data?.date ? formatDateHebrew(data.date) : data?.date;
+        message = `התור שלך אושר!\nתאריך: ${formattedDate}\nשעה: ${data?.time}\n\nלביטול התור שלח 0 (לפחות 3 שעות לפני התור)\nBARBERSHOP by Mohammad Eyad`;
+        break;
+      }
+        
+      case "booking_cancelled": {
+        const formattedDate = data?.date ? formatDateHebrew(data.date) : data?.date;
+        message = `התור שלך בתאריך ${formattedDate} בשעה ${data?.time} בוטל.\nBARBERSHOP by Mohammad Eyad`;
+        break;
+      }
+        
+      case "booking_updated": {
+        const formattedDate = data?.date ? formatDateHebrew(data.date) : data?.date;
+        message = `התור שלך עודכן!\nתאריך: ${formattedDate}\nשעה: ${data?.time}\nBARBERSHOP by Mohammad Eyad`;
+        break;
+      }
+        
+      default:
+        throw new Error("Invalid message type");
+    }
+
+    // Send SMS via gateway
     const smsGatewayLogin = Deno.env.get("SMS_GATEWAY_LOGIN");
     const smsGatewayPassword = Deno.env.get("SMS_GATEWAY_PASSWORD");
 
@@ -48,90 +167,9 @@ const handler = async (req: Request): Promise<Response> => {
       throw new Error("SMS Gateway not configured");
     }
 
-    const { phone, type, data }: SendSmsRequest = await req.json();
+    console.log(`Sending SMS to ${maskedPhone}: ${type}`);
 
-    // Validate Israeli phone number format
-    if (!phone || !/^05\d{8}$/.test(phone)) {
-      throw new Error("Invalid phone number format");
-    }
-
-    // Format phone for international (Israel +972)
-    const formattedPhone = `+972${phone.slice(1)}`;
-
-    // Generate message based on type
-    let message = "";
-    switch (type) {
-      case "verification":
-        // Use fixed code for test account (Google Play Store review)
-        const isTestAccount = phone === TEST_PHONE;
-        const code = isTestAccount ? TEST_CODE : (data?.code || Math.floor(100000 + Math.random() * 900000).toString());
-        message = `קוד האימות שלך הוא: ${code}\nBARBERSHOP by Mohammad Eyad`;
-        
-        // Store verification code in database
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
-        
-        // Delete old codes for this phone
-        await supabase
-          .from("verification_codes")
-          .delete()
-          .eq("phone", phone);
-        
-        // Insert new code with extended expiry for test account (30 days), or 5-minute expiry for normal users
-        const expiryTime = isTestAccount ? 30 * 24 * 60 * 60 * 1000 : 5 * 60 * 1000;
-        const expiresAt = new Date(Date.now() + expiryTime).toISOString();
-        await supabase.from("verification_codes").insert({
-          phone,
-          code,
-          expires_at: expiresAt,
-          verified: false,
-        });
-        
-        // Skip SMS for test account
-        if (isTestAccount) {
-          console.log("Test account detected - skipping actual SMS");
-          return new Response(
-            JSON.stringify({ 
-              success: true, 
-              type,
-              testAccount: true
-            }),
-            {
-              status: 200,
-              headers: { "Content-Type": "application/json", ...corsHeaders },
-            }
-          );
-        }
-        
-        break;
-        
-      case "booking_confirmation":
-        const formattedDateConfirm = data?.date ? formatDateHebrew(data.date) : data?.date;
-        message = `התור שלך אושר!\nתאריך: ${formattedDateConfirm}\nשעה: ${data?.time}\n\nלביטול התור שלח 0 (לפחות 3 שעות לפני התור)\nBARBERSHOP by Mohammad Eyad`;
-        break;
-        
-      case "booking_cancelled":
-        const formattedDateCancel = data?.date ? formatDateHebrew(data.date) : data?.date;
-        message = `התור שלך בתאריך ${formattedDateCancel} בשעה ${data?.time} בוטל.\nBARBERSHOP by Mohammad Eyad`;
-        break;
-        
-      case "booking_updated":
-        const formattedDateUpdate = data?.date ? formatDateHebrew(data.date) : data?.date;
-        message = `התור שלך עודכן!\nתאריך: ${formattedDateUpdate}\nשעה: ${data?.time}\nBARBERSHOP by Mohammad Eyad`;
-        break;
-        
-      default:
-        throw new Error("Invalid message type");
-    }
-
-    console.log(`Sending SMS via capcom6 Gateway to ${formattedPhone}: ${type}`);
-
-    // Send SMS via capcom6 SMS Gateway Cloud API
-    // API docs: https://docs.sms-gate.app/integration/api/
     const gatewayUrl = "https://api.sms-gate.app/3rdparty/v1/message";
-    
-    // Basic Auth header
     const authHeader = "Basic " + btoa(`${smsGatewayLogin}:${smsGatewayPassword}`);
 
     const response = await fetch(gatewayUrl, {
@@ -142,39 +180,29 @@ const handler = async (req: Request): Promise<Response> => {
       },
       body: JSON.stringify({
         textMessage: { text: message },
-        phoneNumbers: [formattedPhone],
+        phoneNumbers: [normalizedPhone],
       }),
     });
 
     const responseText = await response.text();
-    console.log(`capcom6 Gateway response (${response.status}):`, responseText);
+    console.log(`SMS Gateway response (${response.status}):`, responseText);
 
     if (!response.ok) {
-      console.error("capcom6 Gateway error:", responseText);
+      console.error("SMS Gateway error:", responseText);
       throw new Error("Failed to send SMS via gateway");
     }
 
-    console.log("SMS sent successfully via capcom6 Gateway");
+    console.log(`SMS sent successfully to ${maskedPhone}`);
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        type,
-        gateway: "capcom6"
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      JSON.stringify({ success: true, type, gateway: "capcom6" }),
+      { status: 200, headers: { "Content-Type": "application/json", ...headers } }
     );
   } catch (error: any) {
-    console.error("Error in send-sms function:", error);
+    console.error("Error in send-sms function:", error.message);
     return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      JSON.stringify({ error: sanitizeError(error) }),
+      { status: 500, headers: { "Content-Type": "application/json", ...getCorsHeaders(null) } }
     );
   }
 };

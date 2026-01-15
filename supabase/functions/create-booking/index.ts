@@ -1,11 +1,24 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+/**
+ * create-booking Edge Function
+ * SECURITY FIXES APPLIED:
+ * - Fix #1: Relies on database UNIQUE constraint for race condition protection
+ * - Fix #6: Atomic verification code update
+ * - Fix #9: Phone normalization to E.164
+ * - Fix #11: Date validation (future dates only, max 60 days)
+ * - Fix #16: CORS restricted to production domain
+ * - Fix #17: Phone numbers masked in logs
+ */
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import {
+  getCorsHeaders,
+  getSupabaseClient,
+  normalizePhone,
+  toLocalPhone,
+  maskPhone,
+  sanitizeError,
+  isValidBookingDate,
+} from "../_shared/security.ts";
 
 interface CreateBookingRequest {
   phone: string;
@@ -16,21 +29,19 @@ interface CreateBookingRequest {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  const origin = req.headers.get("Origin");
+  const headers = getCorsHeaders(origin);
+
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { headers });
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
+    const supabase = getSupabaseClient();
     const { phone, code, customer_name, booking_date, booking_time }: CreateBookingRequest = await req.json();
 
-    console.log(`Creating booking for phone: ${phone}, date: ${booking_date}, time: ${booking_time}`);
-
-    // Validate inputs
+    // Validate required inputs
     if (!phone || !code || !customer_name || !booking_date || !booking_time) {
       throw new Error("Missing required fields");
     }
@@ -38,53 +49,56 @@ const handler = async (req: Request): Promise<Response> => {
     // Validate code format
     if (!/^\d{6}$/.test(code)) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "קוד לא תקין" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "קוד לא תקין" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
       );
     }
 
-    // Find and validate the verification code
-    const { data: verificationData, error: fetchError } = await supabase
+    // ===== SECURITY: Normalize phone (Fix #9) =====
+    let normalizedPhone: string;
+    try {
+      normalizedPhone = normalizePhone(phone);
+    } catch {
+      throw new Error("Invalid phone number format");
+    }
+
+    const maskedPhone = maskPhone(normalizedPhone);
+    console.log(`Creating booking for: ${maskedPhone}, date: ${booking_date}, time: ${booking_time}`);
+
+    // ===== SECURITY: Date validation (Fix #11) =====
+    if (!isValidBookingDate(booking_date)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "תאריך לא תקין" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
+      );
+    }
+
+    // ===== SECURITY: Atomic verification (Fix #6) =====
+    // Use UPDATE...RETURNING to atomically consume the verification code
+    const { data: verifiedCode, error: verifyError } = await supabase
       .from("verification_codes")
-      .select("*")
-      .eq("phone", phone)
+      .update({ verified: true })
+      .eq("phone", normalizedPhone)
       .eq("code", code)
       .eq("verified", false)
       .gt("expires_at", new Date().toISOString())
+      .select()
       .maybeSingle();
 
-    if (fetchError) {
-      console.error("Database error:", fetchError);
+    if (verifyError) {
+      console.error("Database error:", verifyError);
       throw new Error("Database error");
     }
 
-    if (!verificationData) {
-      console.log("Invalid or expired code");
+    if (!verifiedCode) {
+      console.log(`Invalid/expired code for: ${maskedPhone}`);
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "קוד שגוי או פג תוקף" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "קוד שגוי או פג תוקף" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
       );
     }
 
-    // Mark code as verified
-    await supabase
-      .from("verification_codes")
-      .update({ verified: true })
-      .eq("id", verificationData.id);
-
-    // Check if slot is already booked
+    // Check if slot is already booked (defense in depth - DB constraint is primary)
     const { data: existingBooking } = await supabase
       .from("bookings")
       .select("id")
@@ -95,14 +109,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (existingBooking) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "השעה הזו כבר תפוסה" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "השעה הזו כבר תפוסה" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
       );
     }
 
@@ -116,23 +124,19 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (closedSlot) {
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: "השעה הזו לא זמינה" 
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+        JSON.stringify({ success: false, error: "השעה הזו לא זמינה" }),
+        { status: 200, headers: { "Content-Type": "application/json", ...headers } }
       );
     }
 
-    // Create the booking
+    // ===== Create the booking =====
+    // The database UNIQUE constraint (Fix #1) ensures no double-booking
+    // even if two requests pass the above checks concurrently
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
       .insert([{
         customer_name: customer_name.trim(),
-        customer_phone: phone,
+        customer_phone: normalizedPhone, // Store normalized E.164 format
         booking_date,
         booking_time,
         status: "confirmed"
@@ -141,19 +145,23 @@ const handler = async (req: Request): Promise<Response> => {
       .single();
 
     if (bookingError) {
+      // Check if it's a unique constraint violation (race condition caught)
+      if (bookingError.code === "23505") {
+        console.log(`Race condition caught by DB constraint for: ${booking_date} ${booking_time}`);
+        return new Response(
+          JSON.stringify({ success: false, error: "השעה הזו כבר תפוסה" }),
+          { status: 200, headers: { "Content-Type": "application/json", ...headers } }
+        );
+      }
       console.error("Booking error:", bookingError);
       throw new Error("Failed to create booking");
     }
 
-    console.log("Booking created successfully:", booking.id);
+    console.log(`Booking created: ${booking.id} for ${maskedPhone}`);
 
-    // Send confirmation SMS (via central send-sms function so copy stays consistent)
+    // Send confirmation SMS
     try {
-      // send-sms expects an Israeli local number like 05XXXXXXXX
-      const localPhone = phone.startsWith("+972")
-        ? `0${phone.slice(4)}`
-        : phone;
-
+      const localPhone = toLocalPhone(normalizedPhone);
       await supabase.functions.invoke("send-sms", {
         body: {
           phone: localPhone,
@@ -165,31 +173,21 @@ const handler = async (req: Request): Promise<Response> => {
           },
         },
       });
-
-      console.log("Confirmation SMS sent (send-sms)");
+      console.log(`Confirmation SMS sent for booking: ${booking.id}`);
     } catch (smsError) {
       console.error("Failed to send confirmation SMS:", smsError);
       // Don't fail the booking if SMS fails
     }
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        booking 
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      JSON.stringify({ success: true, booking }),
+      { status: 200, headers: { "Content-Type": "application/json", ...headers } }
     );
   } catch (error: any) {
-    console.error("Error in create-booking function:", error);
+    console.error("Error in create-booking function:", error.message);
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+      JSON.stringify({ success: false, error: sanitizeError(error) }),
+      { status: 500, headers: { "Content-Type": "application/json", ...headers } }
     );
   }
 };
