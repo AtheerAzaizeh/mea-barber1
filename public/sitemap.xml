@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://mea-barber.com/</loc>
+    <xhtml:link rel="alternate" hreflang="he" href="https://mea-barber.com/"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://mea-barber.com/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://mea-barber.com/"/>
+    <lastmod>2026-01-15</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mea-barber.com/privacy-policy</loc>
+    <lastmod>2026-01-15</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>
