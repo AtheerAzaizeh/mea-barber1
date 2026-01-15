@@ -9,30 +9,58 @@ export function IosInstallPrompt() {
   const [isChrome, setIsChrome] = useState(false);
 
   useEffect(() => {
+    // Debug logging
+    console.log('[IosInstallPrompt] User Agent:', navigator.userAgent);
+    
+    // Check if device is iOS (multiple detection methods)
+    const ua = navigator.userAgent;
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || 
+                  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPad Pro detection
+    
+    console.log('[IosInstallPrompt] Is iOS:', isIOS);
+    
+    if (!isIOS) {
+      console.log('[IosInstallPrompt] Not iOS, skipping');
+      return;
+    }
+    
+    // Check if already installed as PWA
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                         (window.navigator as any).standalone === true;
+    
+    console.log('[IosInstallPrompt] Is Standalone:', isStandalone);
+    
+    if (isStandalone) {
+      console.log('[IosInstallPrompt] Already installed, skipping');
+      return;
+    }
+    
     // Check if already dismissed recently
     const dismissedAt = localStorage.getItem(STORAGE_KEY);
+    console.log('[IosInstallPrompt] Dismissed at:', dismissedAt);
+    
     if (dismissedAt) {
       const dismissedDate = new Date(parseInt(dismissedAt));
       const daysSinceDismissal = (Date.now() - dismissedDate.getTime()) / (1000 * 60 * 60 * 24);
+      console.log('[IosInstallPrompt] Days since dismissal:', daysSinceDismissal);
       if (daysSinceDismissal < DISMISS_DURATION_DAYS) {
+        console.log('[IosInstallPrompt] Recently dismissed, skipping');
         return;
       }
     }
-
-    // Check if device is iOS
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-    // Check if already installed as PWA
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+    
     // Check if using Chrome on iOS (CriOS is Chrome on iOS)
-    const isChromeOnIOS = /CriOS/.test(navigator.userAgent);
-
-    if (isIOS && !isStandalone) {
-      setIsChrome(isChromeOnIOS);
-      // Small delay before showing
-      setTimeout(() => {
-        setShowPrompt(true);
-      }, 2000);
-    }
+    const isChromeOnIOS = /CriOS/.test(ua);
+    console.log('[IosInstallPrompt] Is Chrome on iOS:', isChromeOnIOS);
+    
+    setIsChrome(isChromeOnIOS);
+    
+    // Show prompt after delay
+    console.log('[IosInstallPrompt] Will show prompt in 2 seconds');
+    setTimeout(() => {
+      console.log('[IosInstallPrompt] Showing prompt now');
+      setShowPrompt(true);
+    }, 2000);
   }, []);
 
   const handleDismiss = () => {
